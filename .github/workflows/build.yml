@@ -6,6 +6,8 @@
 name: Scheduled Nightly Build
 
 on:
+  push:
+    branches: [ "master" ]
   schedule:
     - cron: '0 4 * * *' 
   workflow_dispatch:
@@ -14,7 +16,6 @@ env:
   # Path to the solution file relative to the root of the project.
   SOLUTION_FILE_PATH: .
   BUILD_CONFIGURATION: Release
-  # UPDATE THIS to your actual username or organization name
   MAIN_REPO: 'optiscaler/OptiScaler'
 
 permissions:
@@ -108,7 +109,6 @@ jobs:
         # Save to a markdown file. This prevents formatting breaks when passing multiline strings to the release action.
         $releaseNotes | Out-File -FilePath release_notes.md -Encoding utf8
 
-    # 6. Create the release and upload the asset in one step
     - name: Create Release and Upload Artifact
       uses: softprops/action-gh-release@v2
       with:
