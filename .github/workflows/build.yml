@@ -16,7 +16,7 @@ env:
   # Path to the solution file relative to the root of the project.
   SOLUTION_FILE_PATH: .
   BUILD_CONFIGURATION: Release
-  MAIN_REPO: 'optiscaler/OptiScaler'
+  MAIN_REPO: 'TheRazerMD/OptiScaler'
 
 permissions:
   contents: write
