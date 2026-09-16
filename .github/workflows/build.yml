@@ -2,7 +2,6 @@
 # They are provided by a third-party and are governed by
 # separate terms of service, privacy policy, and support
 # documentation.
-
 name: Scheduled Nightly Build
 
 on:
@@ -22,149 +21,151 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
-    - name: Checkout Main Repository
-      uses: actions/checkout@v6
-      with:
-        repository: ${{ env.MAIN_REPO }}
-        fetch-depth: 0
-        submodules: 'true'
+      - name: Checkout Main Repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.MAIN_REPO }}
+          fetch-depth: 0
+          submodules: 'true'
 
-    - name: Extract OptiScaler Version
-      id: get_version
-      working-directory: ${{ github.workspace }}
-      shell: powershell
-      run: |
-        $resourceFile = ".\OptiScaler\resource.h"
-        if (-Not (Test-Path $resourceFile)) {
-            Write-Error "File not found: $resourceFile"
-            exit 1
-        }
+      - name: Extract OptiScaler Version
+        id: get_version
+        working-directory: ${{ github.workspace }}
+        shell: powershell
+        run: |
+          $resourceFile = ".\OptiScaler\resource.h"
+          if (-Not (Test-Path $resourceFile)) {
+              Write-Error "File not found: $resourceFile"
+              exit 1
+          }
 
-        function Get-Version-Component {
-            param (
-                [string]$pattern,
-                [string]$replacement
-            )
-            $line = Get-Content $resourceFile | Select-String -Pattern $pattern | Select-Object -First 1
-            if ($line) {
-                return ($line.Line -replace $replacement).Trim()
-            } else {
-                Write-Error "Pattern not found: $pattern"
-                exit 1
-            }
-        }
+          function Get-Version-Component {
+              param (
+                  [string]$pattern,
+                  [string]$replacement
+              )
+              $line = Get-Content $resourceFile | Select-String -Pattern $pattern | Select-Object -First 1
+              if ($line) {
+                  return ($line.Line -replace $replacement).Trim()
+              } else {
+                  Write-Error "Pattern not found: $pattern"
+                  exit 1
+              }
+          }
 
-        $majorVersion = Get-Version-Component 'VER_MAJOR_VERSION' '#define VER_MAJOR_VERSION\s+'
-        $minorVersion = Get-Version-Component 'VER_MINOR_VERSION' '#define VER_MINOR_VERSION\s+'
-        $hotfixVersion = Get-Version-Component 'VER_HOTFIX_VERSION' '#define VER_HOTFIX_VERSION\s+'
-        $buildVersion = Get-Version-Component 'VER_BUILD_NUMBER' '#define VER_BUILD_NUMBER\s+'
+          $majorVersion = Get-Version-Component 'VER_MAJOR_VERSION' '#define VER_MAJOR_VERSION\s+'
+          $minorVersion = Get-Version-Component 'VER_MINOR_VERSION' '#define VER_MINOR_VERSION\s+'
+          $hotfixVersion = Get-Version-Component 'VER_HOTFIX_VERSION' '#define VER_HOTFIX_VERSION\s+'
+          $buildVersion = Get-Version-Component 'VER_BUILD_NUMBER' '#define VER_BUILD_NUMBER\s+'
 
-        $version = "v$majorVersion.$minorVersion.$hotfixVersion-pre$buildVersion"
-        $date = Get-Date -Format "yyyyMMdd"
-        $outputFileName = "OptiScaler_${version}_${date}"
-        $releaseTag = "nightly-${date}"
+          $version = "v$majorVersion.$minorVersion.$hotfixVersion-pre$buildVersion"
+          $date = Get-Date -Format "yyyyMMdd"
+          $outputFileName = "OptiScaler_${version}_${date}"
+          $releaseTag = "nightly-${date}"
 
-        Write-Output "Generated Filename: $outputFileName"
-        Write-Output "Generated Release Tag: $releaseTag"
+          Write-Output "Generated Filename: $outputFileName"
+          Write-Output "Generated Release Tag: $releaseTag"
 
-        "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "filename=$outputFileName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "release_tag=$releaseTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-      continue-on-error: false
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "filename=$outputFileName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "release_tag=$releaseTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        continue-on-error: false
 
-    - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v2
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
 
-    - name: Build
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}} /verbosity:minimal
+      - name: Build
+        working-directory: ${{env.GITHUB_WORKSPACE}}
+        run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}} /verbosity:minimal
 
-    - name: Download and Bundle dlssg-to-fsr3 DLL
-      id: fetch_dlssg
-      working-directory: ${{ github.workspace }}
-      shell: powershell
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        $ErrorActionPreference = "Stop"
+      - name: Upload PDBs as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.get_version.outputs.filename }}-pdbs
+          path: ${{ github.workspace }}/x64/Release/**/*.pdb
+          if-no-files-found: warn
 
-        $downloadDir = Join-Path $env:GITHUB_WORKSPACE "dlssg-to-fsr3-download"
-        New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+      - name: Download and Bundle dlssg-to-fsr3 DLL
+        id: fetch_dlssg
+        working-directory: ${{ github.workspace }}
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
 
-        Write-Output "Downloading latest release zip from optiscaler/dlssg-to-fsr3"
-        gh release download --repo optiscaler/dlssg-to-fsr3 --pattern "*.zip" --dir $downloadDir --clobber
+          $downloadDir = Join-Path $env:GITHUB_WORKSPACE "dlssg-to-fsr3-download"
+          New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
 
-        $zipFile = Get-ChildItem -Path $downloadDir -Filter "*.zip" | Select-Object -First 1
-        if (-not $zipFile) {
-            Write-Error "No zip asset found in the latest optiscaler/dlssg-to-fsr3 release."
-            exit 1
-        }
-        Write-Output "Downloaded: $($zipFile.Name)"
+          Write-Output "Downloading latest release zip from optiscaler/dlssg-to-fsr3"
+          gh release download --repo optiscaler/dlssg-to-fsr3 --pattern "*.zip" --dir $downloadDir --clobber
 
-        $extractPath = Join-Path $env:GITHUB_WORKSPACE "dlssg-to-fsr3-extracted"
-        Expand-Archive -Path $zipFile.FullName -DestinationPath $extractPath -Force
+          $zipFile = Get-ChildItem -Path $downloadDir -Filter "*.zip" | Select-Object -First 1
+          if (-not $zipFile) {
+              Write-Error "No zip asset found in the latest optiscaler/dlssg-to-fsr3 release."
+              exit 1
+          }
+          Write-Output "Downloaded: $($zipFile.Name)"
 
-        $dllName = "dlssg_to_fsr3_amd_is_better.dll"
-        $dllFile = Get-ChildItem -Path $extractPath -Filter $dllName -Recurse | Select-Object -First 1
-        if (-not $dllFile) {
-            Write-Error "$dllName was not found inside $($zipFile.Name)"
-            exit 1
-        }
+          $extractPath = Join-Path $env:GITHUB_WORKSPACE "dlssg-to-fsr3-extracted"
+          Expand-Archive -Path $zipFile.FullName -DestinationPath $extractPath -Force
 
-        $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\Release\a\OptiScaler"
-        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+          $dllName = "dlssg_to_fsr3_amd_is_better.dll"
+          $dllFile = Get-ChildItem -Path $extractPath -Filter $dllName -Recurse | Select-Object -First 1
+          if (-not $dllFile) {
+              Write-Error "$dllName was not found inside $($zipFile.Name)"
+              exit 1
+          }
 
-        Copy-Item -Path $dllFile.FullName -Destination (Join-Path $destDir $dllName) -Force
-        Write-Output "Copied $dllName to $destDir"
-      continue-on-error: false
+          $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\Release\a\OptiScaler"
+          New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+          Copy-Item -Path $dllFile.FullName -Destination (Join-Path $destDir $dllName) -Force
 
-    - name: Compress the artifact
-      run: |
-        Copy-Item -Path "${{ github.workspace }}\Streamlined_fetcher_windows.bat" -Destination "${{ github.workspace }}\x64\Release\a\OptiScaler" -Force
-        $zipName = "${{ steps.get_version.outputs.filename }}.7z"
-        7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\Release\a\*.*
-      continue-on-error: false
+          Write-Output "Copied $dllName to $destDir"
+        continue-on-error: false
 
-    - name: Generate Changelog
-      id: commit_messages
-      working-directory: ${{ github.workspace }}
-      shell: powershell
-      run: |
-        Write-Output "Fetching commits from the last 24 hours..."
+      - name: Compress the artifact
+        run: |
+          Copy-Item -Path "${{ github.workspace }}\Streamlined_fetcher_windows.bat" -Destination "${{ github.workspace }}\x64\Release\a\OptiScaler" -Force
+          $zipName = "${{ steps.get_version.outputs.filename }}.7z"
+          7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\Release\a\*.*
+        continue-on-error: false
 
-        $commits = git log --since="1 day ago" --pretty=format:"%h|%H|%s|%an" --no-merges --first-parent
+      - name: Generate Changelog
+        id: commit_messages
+        working-directory: ${{ github.workspace }}
+        shell: powershell
+        run: |
+          Write-Output "Fetching commits from the last 24 hours..."
+          $commits = git log --since="1 day ago" --pretty=format:"%h|%H|%s|%an" --no-merges --first-parent
 
-        if (-not $commits) {
-            $releaseNotes = "No changes in the last 24 hours."
-        }
-        else {
-            $formattedCommits = foreach ($commit in $commits) {
-                $parts = $commit -split '\|', 4
+          if (-not $commits) {
+              $releaseNotes = "No changes in the last 24 hours."
+          }
+          else {
+              $formattedCommits = foreach ($commit in $commits) {
+                  $parts = $commit -split '\|', 4
+                  $shortHash = $parts[0]
+                  $fullHash = $parts[1]
+                  $message = $parts[2]
+                  $author = $parts[3]
+                  "- [$shortHash](https://github.com/optiscaler/OptiScaler/commit/$fullHash) $message ($author)"
+              }
+              $releaseNotes = "### Changes in the Last 24 Hours`n`n" + ($formattedCommits -join "`n")
+          }
 
-                $shortHash = $parts[0]
-                $fullHash = $parts[1]
-                $message = $parts[2]
-                $author = $parts[3]
+          # Save to a markdown file. This prevents formatting breaks when passing multiline strings to the release action.
+          $releaseNotes | Out-File -FilePath release_notes.md -Encoding utf8
 
-                "- [$shortHash](https://github.com/optiscaler/OptiScaler/commit/$fullHash) $message ($author)"
-            }
-
-            $releaseNotes = "### Changes in the Last 24 Hours`n`n" + ($formattedCommits -join "`n")
-        }
-
-        # Save to a markdown file. This prevents formatting breaks when passing multiline strings to the release action.
-        $releaseNotes | Out-File -FilePath release_notes.md -Encoding utf8
-
-    - name: Create Release and Upload Artifact
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.get_version.outputs.release_tag }}
-        name: Nightly Build ${{ steps.get_version.outputs.release_tag }}
-        body_path: release_notes.md
-        files: ${{ github.workspace }}/${{ steps.get_version.outputs.filename }}.7z
-        prerelease: true
-        draft: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release and Upload Artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.release_tag }}
+          name: Nightly Build ${{ steps.get_version.outputs.release_tag }}
+          body_path: release_notes.md
+          files: ${{ github.workspace }}/${{ steps.get_version.outputs.filename }}.7z
+          prerelease: true
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
