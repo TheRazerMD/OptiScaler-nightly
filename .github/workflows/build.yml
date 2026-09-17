@@ -2,6 +2,7 @@
 # They are provided by a third-party and are governed by
 # separate terms of service, privacy policy, and support
 # documentation.
+
 name: Scheduled Nightly Build
 
 on:
@@ -35,23 +36,24 @@ jobs:
         shell: powershell
         run: |
           $resourceFile = ".\OptiScaler\resource.h"
+
           if (-Not (Test-Path $resourceFile)) {
-              Write-Error "File not found: $resourceFile"
-              exit 1
+            Write-Error "File not found: $resourceFile"
+            exit 1
           }
 
           function Get-Version-Component {
-              param (
-                  [string]$pattern,
-                  [string]$replacement
-              )
-              $line = Get-Content $resourceFile | Select-String -Pattern $pattern | Select-Object -First 1
-              if ($line) {
-                  return ($line.Line -replace $replacement).Trim()
-              } else {
-                  Write-Error "Pattern not found: $pattern"
-                  exit 1
-              }
+            param (
+              [string]$pattern,
+              [string]$replacement
+            )
+            $line = Get-Content $resourceFile | Select-String -Pattern $pattern | Select-Object -First 1
+            if ($line) {
+              return ($line.Line -replace $replacement).Trim()
+            } else {
+              Write-Error "Pattern not found: $pattern"
+              exit 1
+            }
           }
 
           $majorVersion = Get-Version-Component 'VER_MAJOR_VERSION' '#define VER_MAJOR_VERSION\s+'
@@ -79,13 +81,6 @@ jobs:
         working-directory: ${{env.GITHUB_WORKSPACE}}
         run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}} /verbosity:minimal
 
-      - name: Upload PDBs as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.get_version.outputs.filename }}-pdbs
-          path: ${{ github.workspace }}/x64/Release/**/*.pdb
-          if-no-files-found: warn
-
       - name: Download and Bundle dlssg-to-fsr3 DLL
         id: fetch_dlssg
         working-directory: ${{ github.workspace }}
@@ -103,8 +98,8 @@ jobs:
 
           $zipFile = Get-ChildItem -Path $downloadDir -Filter "*.zip" | Select-Object -First 1
           if (-not $zipFile) {
-              Write-Error "No zip asset found in the latest optiscaler/dlssg-to-fsr3 release."
-              exit 1
+            Write-Error "No zip asset found in the latest optiscaler/dlssg-to-fsr3 release."
+            exit 1
           }
           Write-Output "Downloaded: $($zipFile.Name)"
 
@@ -114,14 +109,13 @@ jobs:
           $dllName = "dlssg_to_fsr3_amd_is_better.dll"
           $dllFile = Get-ChildItem -Path $extractPath -Filter $dllName -Recurse | Select-Object -First 1
           if (-not $dllFile) {
-              Write-Error "$dllName was not found inside $($zipFile.Name)"
-              exit 1
+            Write-Error "$dllName was not found inside $($zipFile.Name)"
+            exit 1
           }
 
           $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\Release\a\OptiScaler"
           New-Item -ItemType Directory -Path $destDir -Force | Out-Null
           Copy-Item -Path $dllFile.FullName -Destination (Join-Path $destDir $dllName) -Force
-
           Write-Output "Copied $dllName to $destDir"
         continue-on-error: false
 
@@ -132,7 +126,7 @@ jobs:
           7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\Release\a\*.*
         continue-on-error: false
 
-       - name: Generate Changelog
+      - name: Generate Changelog
         id: commit_messages
         working-directory: ${{ github.workspace }}
         shell: powershell
