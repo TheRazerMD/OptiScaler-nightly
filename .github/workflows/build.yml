@@ -132,27 +132,46 @@ jobs:
           7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\Release\a\*.*
         continue-on-error: false
 
-      - name: Generate Changelog
+       - name: Generate Changelog
         id: commit_messages
         working-directory: ${{ github.workspace }}
         shell: powershell
         run: |
           Write-Output "Fetching commits from the last 24 hours..."
-          $commits = git log --since="1 day ago" --pretty=format:"%h|%H|%s|%an" --no-merges --first-parent
 
-          if (-not $commits) {
-              $releaseNotes = "No changes in the last 24 hours."
+          $fieldSep  = [char]0x1F   # unit separator - unlikely to appear in commit text
+          $recordSep = [char]0x1E   # record separator
+
+          $format = "%h${fieldSep}%H${fieldSep}%s${fieldSep}%b${fieldSep}%an${recordSep}"
+          $rawLog = git log --since="1 day ago" --no-merges --first-parent --pretty=format:"$format"
+
+          if (-not $rawLog) {
+            $releaseNotes = "No changes in the last 24 hours."
           }
           else {
-              $formattedCommits = foreach ($commit in $commits) {
-                  $parts = $commit -split '\|', 4
-                  $shortHash = $parts[0]
-                  $fullHash = $parts[1]
-                  $message = $parts[2]
-                  $author = $parts[3]
-                  "- [$shortHash](https://github.com/optiscaler/OptiScaler/commit/$fullHash) $message ($author)"
+            # Split into individual commit records
+            $records = $rawLog -split [regex]::Escape($recordSep) | Where-Object { $_.Trim() -ne "" }
+
+            $formattedCommits = foreach ($record in $records) {
+              $parts = $record -split [regex]::Escape($fieldSep)
+              $shortHash = $parts[0].Trim()
+              $fullHash  = $parts[1].Trim()
+              $subject   = $parts[2].Trim()
+              $body      = $parts[3].Trim()
+              $author    = $parts[4].Trim()
+
+              $entry = "- [$shortHash](https://github.com/optiscaler/OptiScaler/commit/$fullHash) $subject ($author)"
+
+              if ($body) {
+                # Indent each line of the body so it renders as a sub-list under the commit
+                $bodyLines = $body -split "`n" | ForEach-Object { "  > $($_.Trim())" }
+                $entry += "`n" + ($bodyLines -join "`n")
               }
-              $releaseNotes = "### Changes in the Last 24 Hours`n`n" + ($formattedCommits -join "`n")
+
+              $entry
+            }
+
+            $releaseNotes = "### Changes in the Last 24 Hours`n`n" + ($formattedCommits -join "`n`n")
           }
 
           # Save to a markdown file. This prevents formatting breaks when passing multiline strings to the release action.
