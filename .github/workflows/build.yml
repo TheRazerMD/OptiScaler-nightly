@@ -137,7 +137,13 @@ jobs:
           $recordSep = [char]0x1E   # record separator
 
           $format = "%h${fieldSep}%H${fieldSep}%s${fieldSep}%b${fieldSep}%an${recordSep}"
-          $rawLog = git log --since="1 day ago" --no-merges --first-parent --pretty=format:"$format"
+
+          # PowerShell captures external-command output as an array of lines, not a
+          # single string. Since commit bodies can span multiple lines, that would
+          # silently break our custom record/field separators below. Force it back
+          # into one string first.
+          $rawLogLines = git log --since="1 day ago" --no-merges --first-parent --pretty=format:"$format"
+          $rawLog = ($rawLogLines -join "`n")
 
           if (-not $rawLog) {
             $releaseNotes = "No changes in the last 24 hours."
@@ -148,6 +154,10 @@ jobs:
 
             $formattedCommits = foreach ($record in $records) {
               $parts = $record -split [regex]::Escape($fieldSep)
+              if ($parts.Length -lt 5) {
+                Write-Warning "Skipping malformed commit record: $record"
+                continue
+              }
               $shortHash = $parts[0].Trim()
               $fullHash  = $parts[1].Trim()
               $subject   = $parts[2].Trim()
