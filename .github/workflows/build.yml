@@ -13,7 +13,7 @@ on:
 env:
   # Path to the solution file relative to the root of the project.
   SOLUTION_FILE_PATH: .
-  BUILD_CONFIGURATION: Release
+  BUILD_CONFIGURATION: ReleaseDebug
   MAIN_REPO: 'optiscaler/OptiScaler'
 
 permissions:
@@ -116,7 +116,7 @@ jobs:
               exit 1
           }
 
-          $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\Release\a\OptiScaler"
+          $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\ReleaseDebug\a\OptiScaler"
           New-Item -ItemType Directory -Path $destDir -Force | Out-Null
           Copy-Item -Path $dllFile.FullName -Destination (Join-Path $destDir $dllName) -Force
           Write-Output "Copied $dllName to $destDir"
@@ -124,9 +124,31 @@ jobs:
 
       - name: Compress the artifact
         run: |
-          Copy-Item -Path "${{ github.workspace }}\Streamlined_fetcher_windows.bat" -Destination "${{ github.workspace }}\x64\Release\a\OptiScaler" -Force
+          Copy-Item -Path "${{ github.workspace }}\Streamlined_fetcher_windows.bat" -Destination "${{ github.workspace }}\x64\ReleaseDebug\a\OptiScaler" -Force
+
+          # Main release archive (PDBs excluded)
           $zipName = "${{ steps.get_version.outputs.filename }}.7z"
-          7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\Release\a\*.*
+          7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\ReleaseDebug\a\*.* '-xr!*.pdb'
+          if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }
+
+          # Separate PDB archive: collect every PDB from the build output
+          $pdbStage = "${{ github.workspace }}\pdb-stage"
+          New-Item -ItemType Directory -Path $pdbStage -Force | Out-Null
+
+          $pdbs = Get-ChildItem -Path "${{ github.workspace }}\x64\ReleaseDebug" -Filter *.pdb -Recurse -File
+          if (-not $pdbs) {
+              Write-Error "No PDB files found under x64\ReleaseDebug"
+              exit 1
+          }
+          foreach ($pdb in $pdbs) {
+              Copy-Item -Path $pdb.FullName -Destination (Join-Path $pdbStage $pdb.Name) -Force
+          }
+          Write-Output "Collected $($pdbs.Count) PDB file(s)"
+
+          $pdbZipName = "Workflow_${{ steps.get_version.outputs.release_tag }}_PDBs.zip"
+          7z a -tzip "${{ github.workspace }}\$pdbZipName" "$pdbStage\*"
+          if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }
+          exit 0
         continue-on-error: false
 
       - name: Generate Changelog
@@ -216,7 +238,9 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.release_tag }}
           name: Nightly Build ${{ steps.get_version.outputs.release_tag }}
           body_path: release_notes.md
-          files: ${{ github.workspace }}/${{ steps.get_version.outputs.filename }}.7z
+          files: |
+            ${{ github.workspace }}/${{ steps.get_version.outputs.filename }}.7z
+            ${{ github.workspace }}/Workflow_${{ steps.get_version.outputs.release_tag }}_PDBs.zip
           prerelease: true
           draft: false
         env:
