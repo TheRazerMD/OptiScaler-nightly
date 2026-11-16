@@ -103,11 +103,58 @@ jobs:
           Copy-Item "$ext\directx_agility_sdk\LICENSE.txt" "$lic\DirectX_LICENSE.txt"
           New-Item -ItemType File "$a\!! EXTRACT ALL FILES TO GAME FOLDER !!" | Out-Null
 
+          # Streamlined fetcher goes next to the upscaler DLLs
+          if (-not (Test-Path "$ws\Streamlined_fetcher_windows.bat")) { Write-Error "Streamlined_fetcher_windows.bat not found" }
+          Copy-Item "$ws\Streamlined_fetcher_windows.bat" $opti -Force
+
           # Wildcard copies don't fail on zero matches (e.g. a missing submodule), so check them
           if (-not (Get-ChildItem "$opti\libxess*.dll")) { Write-Error "No XeSS DLLs copied" }
           if (-not (Get-ChildItem "$agility\*.dll")) { Write-Error "No Agility SDK DLLs copied" }
 
-          7z a "$ws\${{ steps.get_version.outputs.filename }}.7z" "$a\*"
+      - name: Download and Bundle dlssg-to-fsr3 DLL
+        id: fetch_dlssg
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $downloadDir = Join-Path $env:GITHUB_WORKSPACE "dlssg-to-fsr3-download"
+          New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+
+          Write-Output "Downloading latest release zip from optiscaler/dlssg-to-fsr3"
+          gh release download --repo optiscaler/dlssg-to-fsr3 --pattern "*.zip" --dir $downloadDir --clobber
+          if ($LASTEXITCODE -ne 0) { Write-Error "gh release download failed"; exit 1 }
+
+          $zipFile = Get-ChildItem -Path $downloadDir -Filter "*.zip" | Select-Object -First 1
+          if (-not $zipFile) {
+              Write-Error "No zip asset found in the latest optiscaler/dlssg-to-fsr3 release."
+              exit 1
+          }
+          Write-Output "Downloaded: $($zipFile.Name)"
+
+          $extractPath = Join-Path $env:GITHUB_WORKSPACE "dlssg-to-fsr3-extracted"
+          Expand-Archive -Path $zipFile.FullName -DestinationPath $extractPath -Force
+
+          $dllName = "dlssg_to_fsr3_amd_is_better.dll"
+          $dllFile = Get-ChildItem -Path $extractPath -Filter $dllName -Recurse | Select-Object -First 1
+          if (-not $dllFile) {
+              Write-Error "$dllName was not found inside $($zipFile.Name)"
+              exit 1
+          }
+
+          # Same subfolder as the upscaler DLLs
+          $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\ReleaseDebug\a\OptiScaler"
+          New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+          Copy-Item -Path $dllFile.FullName -Destination (Join-Path $destDir $dllName) -Force
+          Write-Output "Copied $dllName to $destDir"
+
+      - name: Compress Release Package
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $a = "${{ github.workspace }}\x64\ReleaseDebug\a"
+          7z a "${{ github.workspace }}\${{ steps.get_version.outputs.filename }}.7z" "$a\*"
           if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }
           exit 0
 
