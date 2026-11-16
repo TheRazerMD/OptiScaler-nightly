@@ -82,9 +82,10 @@ jobs:
           $opti = "$a\OptiScaler"
           $lic = "$a\Licenses"
           $agility = "$opti\D3D12_OptiScaler"
+          $plugins = "$opti\plugins"
           $ffx2 = "$ext\FidelityFX-SDK-v2\Kits\FidelityFX\signedbin"
 
-          New-Item -ItemType Directory -Force $a, $opti, $lic, $agility | Out-Null
+          New-Item -ItemType Directory -Force $a, $opti, $lic, $agility, $plugins | Out-Null
 
           Copy-Item "$ws\x64\ReleaseDebug\OptiScaler.dll" $a
           Copy-Item "$ext\xess\LICENSE.txt" "$lic\XeSS_LICENSE.txt"
