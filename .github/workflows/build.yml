@@ -57,7 +57,8 @@ jobs:
         run: |
           $rd = "${{ github.workspace }}\x64\ReleaseDebug"
           if (-not (Test-Path "$rd\OptiScaler.pdb")) { Write-Error "Missing $rd\OptiScaler.pdb"; exit 1 }
-          7z a "${{ github.workspace }}\${{ steps.get_version.outputs.filename }}_ReleaseDebug.7z" "$rd\*"
+          # Skip the OptiScaler_*.7z files the ReleaseDebug post-build drops here, they duplicate the DLL/PDB
+          7z a "${{ github.workspace }}\${{ steps.get_version.outputs.filename }}_ReleaseDebug.7z" "$rd\*" '-x!*.7z'
           if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }
           exit 0
 
