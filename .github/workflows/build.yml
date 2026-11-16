@@ -116,7 +116,7 @@ jobs:
               exit 1
           }
 
-          $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\ReleaseDebug\a\OptiScaler"
+          $destDir = Join-Path $env:GITHUB_WORKSPACE "x64\ReleaseDebug\OptiScaler"
           New-Item -ItemType Directory -Path $destDir -Force | Out-Null
           Copy-Item -Path $dllFile.FullName -Destination (Join-Path $destDir $dllName) -Force
           Write-Output "Copied $dllName to $destDir"
@@ -124,11 +124,12 @@ jobs:
 
       - name: Compress the artifact
         run: |
-          Copy-Item -Path "${{ github.workspace }}\Streamlined_fetcher_windows.bat" -Destination "${{ github.workspace }}\x64\ReleaseDebug\a\OptiScaler" -Force
+          New-Item -ItemType Directory -Path "${{ github.workspace }}\x64\ReleaseDebug\OptiScaler" -Force | Out-Null
+          Copy-Item -Path "${{ github.workspace }}\Streamlined_fetcher_windows.bat" -Destination "${{ github.workspace }}\x64\ReleaseDebug\OptiScaler" -Force
 
           # Main release archive (PDBs excluded)
           $zipName = "${{ steps.get_version.outputs.filename }}.7z"
-          7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\ReleaseDebug\a\*.* '-xr!*.pdb'
+          7z a -r ${{ github.workspace }}\$zipName ${{ github.workspace }}\x64\ReleaseDebug\*.* '-xr!*.pdb'
           if ($LASTEXITCODE -gt 1) { exit $LASTEXITCODE }
 
           # Separate PDB archive: collect every PDB from the build output
